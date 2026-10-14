@@ -1,0 +1,50 @@
+# ينشر صفحة «صديقك الذكي» على GitHub Pages تلقائيًا — فقط إذا نجحت كل الاختبارات.
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Run tests
+        run: |
+          node --test --test-reporter=spec tests/*.test.mjs | tee test-output.txt
+          pass=$(grep -c "^✔" test-output.txt || true); fail=$(grep -c "^✖" test-output.txt || true)
+          echo "::notice::TESTS passed=$pass failed=$fail"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site
+        run: |
+          mkdir _site
+          cp -r index.html manifest.webmanifest sw.js css fonts icons js _site/
+          # رقم النسخة في عامل الخدمة: يجعل المتصفحات تجلب التحديث
+          sed -i "s/__BUILD__/${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}/" _site/sw.js
+          sed -i "s/export const VERSION = '\(.*\)';/export const VERSION = '\1 (${GITHUB_RUN_NUMBER})';/" _site/js/ui/app.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
+      - id: deployment
+        uses: actions/deploy-pages@v4
