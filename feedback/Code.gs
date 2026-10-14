@@ -6,6 +6,7 @@
  */
 const FOLDER_NAME = 'ملاحظات صديقك الذكي';
 const MAX_PER_HOUR = 60;          // حماية من الإرسال المتكرر
+const MAX_PER_DAY = 300;          // حد يومي: لا يمتلئ Drive حتى لو أساء أحد استخدام الرابط
 const MAX_BYTES = 400 * 1024;     // أقصى حجم للملاحظة الواحدة
 
 function doPost(e) {
@@ -13,7 +14,14 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     if (body.app !== 'smart-friend') return reply({ ok: false, error: 'unknown app' });
 
+    // لا نقبل إلا ملاحظات بصيغة التطبيق
+    if (!String(body.markdown || '').startsWith('# ملاحظة SF-')) return reply({ ok: false, error: 'bad format' });
+
     const cache = CacheService.getScriptCache();
+    const dayKey = 'd' + Utilities.formatDate(new Date(), 'Etc/UTC', 'yyyyMMdd');
+    const daily = Number(cache.get(dayKey) || 0);
+    if (daily >= MAX_PER_DAY) return reply({ ok: false, error: 'busy' });
+    cache.put(dayKey, String(daily + 1), 21600);
     const hourKey = 'n' + Utilities.formatDate(new Date(), 'Etc/UTC', 'yyyyMMddHH');
     const count = Number(cache.get(hourKey) || 0);
     if (count >= MAX_PER_HOUR) return reply({ ok: false, error: 'busy' });
@@ -34,7 +42,8 @@ function doPost(e) {
 
 /** للتأكد أن المستقبِل يعمل: افتح رابطه في المتصفح */
 function doGet() {
-  return reply({ ok: true, app: 'smart-friend-feedback', folder: folder().getUrl() });
+  // لا نكشف رابط المجلد لأي أحد
+  return reply({ ok: true, app: 'smart-friend-feedback' });
 }
 
 function folder() {

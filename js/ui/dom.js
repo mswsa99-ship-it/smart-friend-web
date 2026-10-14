@@ -6,7 +6,6 @@ export function h(tag, attrs = {}, ...kids) {
     if (k === 'class') el.className = v;
     else if (k === 'style') el.style.cssText = v;
     else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
-    else if (k === 'html') el.innerHTML = v;
     else el.setAttribute(k, v === true ? '' : v);
   }
   for (const c of kids.flat(Infinity)) {

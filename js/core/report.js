@@ -3,7 +3,7 @@
 export const CATEGORIES = ['إجابة أو معلومة خاطئة', 'لم يسمع الطالب جيدًا', 'مشكلة في الصوت أو الاتصال', 'اقتراح', 'أخرى'];
 const MAX_LOG_CHARS = 200_000;
 const keyPattern = /AIza[0-9A-Za-z_\-]{10,}/g;
-const clean = (s) => String(s ?? '').replace(keyPattern, 'AIza…(مخفي)').replace(/data:image\/[^\s)"']+/g, '(صورة)');
+const cleanBase = (s) => String(s ?? '').replace(keyPattern, 'AIza…(مخفي)').replace(/data:image\/[^\s)"']+/g, '(صورة)');
 const fence = (s) => '```\n' + String(s).replace(/```/g, 'ˋˋˋ') + '\n```';
 
 export function newReportId() {
@@ -14,6 +14,10 @@ export function newReportId() {
 
 /** @returns {{id: string, category: string, markdown: string}} */
 export function buildReport({ id, category, note, email, version, device, profile, memory, log = [], now = new Date() }) {
+  // اسم الطفل لا يخرج من الجهاز
+  const name = String(profile?.name || '').trim();
+  const hide = (s) => (name.length >= 2 ? String(s ?? '').split(name).join('[الطالب]') : String(s ?? ''));
+  const clean = (s) => hide(cleanBase(s));
   const when = now.toLocaleString('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', dateStyle: 'medium', timeStyle: 'short' });
   const conv = (memory?.messages || []).slice(-20).map((m) => `${m.c ? 'الطفل' : 'الصديق'}: ${m.t}`).join('\n');
   let logText = log.map(clean).join('\n');

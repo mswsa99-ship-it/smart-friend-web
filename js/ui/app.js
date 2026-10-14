@@ -13,11 +13,12 @@ import { LiveTutor, Phase, Problem } from '../live/liveTutor.js';
 import { audioContext, audioReady } from '../live/audioEngine.js';
 import { buildReport, newReportId, CATEGORIES } from '../core/report.js';
 import * as Feedback from '../services/feedback.js';
+import { afterWrongPin, isLocked as isPinLocked, secondsLeft } from '../core/pinGuard.js';
 
 /** تنبيه يظهر عند بداية التسجيل وفي الإعدادات */
 const AI_NOTICE = 'صديقك الذكي يعتمد على الذكاء الاصطناعي، وقد تقع أخطاء أحيانًا. إن لاحظت خطأ فأرسل لنا ملاحظة من الإعدادات 🔒، فهي تساعدنا على تحسينه.';
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 const GEMINI_KEY_PAGE = 'https://aistudio.google.com/apikey';
 const KEY_PATTERN = /AIza[0-9A-Za-z_\-]{30,}/;
 
@@ -625,7 +626,8 @@ function confirmNewLesson() {
 
 /* ---------------- قفل ولي الأمر والإعدادات ---------------- */
 function parentGate() {
-  let pin = '', wrongCount = 0, lockedUntil = 0, busy = false;
+  let pin = '', busy = false;
+  const locked = () => isPinLocked(Store.pinGuard(), Date.now());
   modal((box, close) => {
     const showPin = () => {
       const pd = h('div', { class: 'pin-dots' });
@@ -633,26 +635,25 @@ function parentGate() {
       const paint = (err) => { pd.className = `pin-dots${err ? ' err' : ''}`; pd.replaceChildren(...Array.from({ length: Math.max(4, pin.length) }, (_, i) => h('i', { class: i < pin.length ? 'on' : '' }))); };
       paint();
       const openBtn = h('button', { class: 'btn mid', onclick: check }, 'فتح');
-      const refresh = () => { openBtn.disabled = pin.length < 4 || busy || Date.now() < lockedUntil; };
+      const refresh = () => { openBtn.disabled = pin.length < 4 || busy || locked(); };
+      // القفل محفوظ: إعادة فتح الصفحة لا تلغيه
+      const tick = setInterval(() => {
+        if (!box.isConnected) return clearInterval(tick);
+        const s = secondsLeft(Store.pinGuard(), Date.now());
+        if (s > 0) { sub.textContent = `محاولات كثيرة، انتظر ${s} ثانية`; sub.style.color = 'var(--coral-deep)'; }
+        else if (sub.style.color) { sub.textContent = 'اكتب الرقم السري'; sub.style.color = ''; }
+        refresh();
+      }, 500);
       async function check() {
+        if (locked()) return;
         busy = true; refresh();
-        if (await verifyPin(pin)) return showOptions();
-        wrongCount++; paint(true);
-        setTimeout(() => {
-          pin = ''; busy = false; paint();
-          if (wrongCount >= 5) {
-            wrongCount = 0; lockedUntil = Date.now() + 60000;
-            const tick = setInterval(() => {
-              const s = Math.ceil((lockedUntil - Date.now()) / 1000);
-              if (s <= 0 || !box.isConnected) { clearInterval(tick); sub.textContent = 'اكتب الرقم السري'; sub.style.color = ''; refresh(); }
-              else { sub.textContent = `محاولات كثيرة، انتظر ${s} ثانية`; sub.style.color = 'var(--coral-deep)'; }
-            }, 500);
-          }
-          refresh();
-        }, 550);
+        if (await verifyPin(pin)) { Store.setPinGuard({ fails: 0, until: 0 }); clearInterval(tick); return showOptions(); }
+        Store.setPinGuard(afterWrongPin(Store.pinGuard(), Date.now()));
+        paint(true);
+        setTimeout(() => { pin = ''; busy = false; paint(); refresh(); }, 550);
       }
       box.replaceChildren(h('div', { style: 'font-size:36px' }, '🔒'), h('h2', {}, 'لولي الأمر فقط'), sub, pd,
-        numberPad((d) => { if (pin.length < 6 && !busy && Date.now() >= lockedUntil) { pin += d; paint(); refresh(); } }, () => { pin = pin.slice(0, -1); paint(); refresh(); }),
+        numberPad((d) => { if (pin.length < 6 && !busy && !locked()) { pin += d; paint(); refresh(); } }, () => { pin = pin.slice(0, -1); paint(); refresh(); }),
         openBtn, h('button', { class: 'link', onclick: close }, 'إغلاق'));
       refresh();
     };

@@ -30,6 +30,10 @@ export async function verifyPin(pin) {
   try { const p = JSON.parse(ls.get('sf.pin')); return p.hash === await hash(p.salt, pin); } catch { return false; }
 }
 
+/** حالة قفل الرقم السري بعد المحاولات الخاطئة */
+export function pinGuard() { try { return JSON.parse(ls.get('sf.pinGuard') || 'null') || { fails: 0, until: 0 }; } catch { return { fails: 0, until: 0 }; } }
+export const setPinGuard = (st) => ls.set('sf.pinGuard', JSON.stringify(st));
+
 /* ---------------- ذاكرة الدرس ---------------- */
 export const loadMemory = () => Mem.fromJson(ls.get('sf.memory'));
 export const saveMemory = (m) => ls.set('sf.memory', Mem.toJson(m));
@@ -93,6 +97,6 @@ export async function loadKey() {
 export const clearKey = () => ls.del('sf.key');
 
 export function clearAll() {
-  ['sf.profile', 'sf.pin', 'sf.voice', 'sf.pickup', 'sf.memory', 'sf.key'].forEach(ls.del);
+  ['sf.profile', 'sf.pin', 'sf.pinGuard', 'sf.voice', 'sf.pickup', 'sf.memory', 'sf.key', 'sf.email', 'sf.feedbackQueue'].forEach(ls.del);
   try { indexedDB.deleteDatabase('sf-vault'); } catch {}
 }
