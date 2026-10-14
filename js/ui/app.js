@@ -11,8 +11,13 @@ import { modeFrom } from '../core/nearGate.js';
 import { upsertMessage, displayChildText, isolateMath } from '../core/messages.js';
 import { LiveTutor, Phase, Problem } from '../live/liveTutor.js';
 import { audioContext, audioReady } from '../live/audioEngine.js';
+import { buildReport, newReportId, CATEGORIES } from '../core/report.js';
+import * as Feedback from '../services/feedback.js';
 
-export const VERSION = '1.0.0';
+/** تنبيه يظهر عند بداية التسجيل وفي الإعدادات */
+const AI_NOTICE = 'صديقك الذكي يعتمد على الذكاء الاصطناعي، وقد تقع أخطاء أحيانًا. إن لاحظت خطأ فأرسل لنا ملاحظة من الإعدادات 🔒، فهي تساعدنا على تحسينه.';
+
+export const VERSION = '1.1.0';
 const GEMINI_KEY_PAGE = 'https://aistudio.google.com/apikey';
 const KEY_PATTERN = /AIza[0-9A-Za-z_\-]{30,}/;
 
@@ -337,6 +342,7 @@ function viewLink() {
     h('button', { class: 'link', onclick: () => manual.classList.toggle('hidden') }, 'لم يرتبط؟ الصق الرمز يدويًا'),
     manual,
     h('p', { class: 'small' }, '🔒 يُحفظ الرمز مشفّرًا على هذا الجهاز فقط، والاستخدام مجاني على حسابك.'),
+    h('p', { class: 'small', style: 'line-height:1.6' }, AI_NOTICE),
     h('p', { class: 'small' }, `نسخة الويب ${VERSION}`),
   )));
   // عند الرجوع من صفحة Google: نحاول قراءة الرمز المنسوخ (كروم أندرويد يسمح بعد الإذن)
@@ -600,7 +606,7 @@ function issueCard(issue, retrying) {
     NoInternet: ['📶 لا يوجد اتصال بالإنترنت', retrying ? 'أحاول الاتصال تلقائيًا… تأكد أن الواي فاي أو البيانات تعمل.' : 'تأكد من الإنترنت ثم اضغط «حاول مرة أخرى».'],
     Relink: ['🔑 ربط حساب Gemini يحتاج تحديثًا', 'اطلب من ولي الأمر فتح القفل ثم «إعادة ربط حساب Gemini».'],
     Quota: ['⏳ وصل الحساب لحد الاستخدام المجاني مؤقتًا', 'انتظر قليلًا ثم اضغط «حاول مرة أخرى».'],
-    Unavailable: ['⚠️ تعذّر الاتصال بصديقك', 'اضغط «حاول مرة أخرى». إن تكررت المشكلة أرسل «ملف المطور» للمطور.'],
+    Unavailable: ['⚠️ تعذّر الاتصال بصديقك', 'اضغط «حاول مرة أخرى». إن تكررت المشكلة أرسل لنا ملاحظة من الإعدادات 🔒.'],
     NoMic: ['🎤 صديقك يحتاج إذن الميكروفون', isIOS ? 'اضغط «حاول مرة أخرى» واختر «سماح». إن لم يظهر السؤال: الإعدادات ← سفاري ← الميكروفون ← سماح.' : 'اضغط «حاول مرة أخرى» واسمح باستخدام الميكروفون (من رمز القفل بجانب العنوان).'],
   }[issue];
   return h('div', { class: 'issue' }, h('b', {}, title), h('p', {}, body),
@@ -659,7 +665,8 @@ function parentGate() {
       opt('🔗', 'إعادة ربط حساب Gemini', 'lav', () => { close(); relink(); }),
       opt('↺', 'إعادة ضبط التطبيق', 'coral', showReset),
       opt('📲', 'التثبيت على الشاشة الرئيسية', '', showInstall),
-      Log.ENABLED ? opt('🛠️', 'ملف المطور', 'gray', () => { close(); developerFile(); }) : null,
+      opt('📝', 'إرسال ملاحظة', 'gray', () => { close(); sendNote(); }, 'خطأ في الشرح، أو مشكلة، أو اقتراح'),
+      h('p', { class: 'small', style: 'line-height:1.6' }, AI_NOTICE),
       h('p', { class: 'small' }, `نسخة الويب ${VERSION}`),
       h('button', { class: 'link', onclick: close }, 'إغلاق'));
     const showVoices = () => box.replaceChildren(h('h2', {}, 'صوت الصديق'), h('p', { class: 'muted', style: 'font-size:14px' }, 'أصوات Gemini الطبيعية'),
@@ -678,30 +685,42 @@ function parentGate() {
   });
 }
 
-/** ملف المطور: يفتح من إعدادات ولي الأمر فقط (لا يراه الطفل) */
-function developerFile() {
+/** إرسال ملاحظة: نص المستخدم + السجل والمحادثة تلقائيًا ← مجلد الملاحظات على Drive */
+function sendNote() {
+  let category = null;
   modal((box, close) => {
-    const pre = h('div', { class: 'devlog' });
-    const paint = () => { pre.textContent = Log.snapshot().slice(-600).join('\n'); pre.scrollTop = pre.scrollHeight; };
-    paint();
-    const off = Log.onChange(() => requestAnimationFrame(paint));
-    const closeAll = () => { off(); close(); };
-    box.append(h('h2', {}, '🛠️ ملف المطور'),
-      h('div', { style: 'display:flex;gap:8px;width:100%' },
-        h('button', { class: 'btn mint mid', style: 'flex:1', onclick: async () => {
-          try { await navigator.clipboard.writeText(Log.exportText()); toast('✅ نُسخ الملف كاملًا. الصقه في الواتساب وأرسله للمطور.'); }
-          catch { toast('تعذّر النسخ، استخدم «مشاركة».'); }
-        } }, 'نسخ الكل'),
-        h('button', { class: 'btn mid', style: 'flex:1', onclick: async () => {
-          const text = Log.exportText();
-          try {
-            if (navigator.share) await navigator.share({ title: 'ملف المطور — صديقك الذكي', text });
-            else { await navigator.clipboard.writeText(text); toast('نُسخ الملف — الصقه في الواتساب.'); }
-          } catch {}
-        } }, 'مشاركة')),
-      pre,
-      h('button', { class: 'link', onclick: () => { Log.clear(); paint(); } }, 'مسح السجل'),
-      h('button', { class: 'link', onclick: closeAll }, 'إغلاق'));
+    const chips = h('div', { style: 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center' },
+      CATEGORIES.map((c) => h('button', { class: 'grade', style: 'padding:8px 12px;flex-direction:row', onclick: (e) => {
+        category = c; chips.querySelectorAll('.grade').forEach((x) => x.classList.remove('on')); e.currentTarget.classList.add('on'); refresh();
+      } }, h('b', { style: 'font-size:15px' }, c))));
+    const note = h('textarea', { rows: 4, placeholder: 'اكتب ملاحظتك هنا… مثلًا: قال إن 5 أس 6 يساوي 36',
+      style: 'width:100%;border:2px solid #DDE3F0;border-radius:18px;padding:10px 14px;font-size:17px;resize:vertical;outline:none' });
+    let saved = ''; try { saved = localStorage.getItem('sf.email') || ''; } catch {}
+    const email = h('input', { type: 'email', value: saved, placeholder: 'بريدك الإلكتروني (اختياري)', dir: 'ltr', autocomplete: 'email',
+      style: 'width:100%;border:2px solid #DDE3F0;border-radius:18px;padding:10px 14px;font-size:16px;outline:none;text-align:center' });
+    const btn = h('button', { class: 'btn mint mid', onclick: submit }, 'إرسال');
+    const refresh = () => { btn.disabled = !category || !note.value.trim(); };
+    note.addEventListener('input', refresh); refresh();
+    async function submit() {
+      btn.disabled = true; btn.textContent = 'أرسل…';
+      const mail = email.value.trim();
+      try { localStorage.setItem('sf.email', mail); } catch {}
+      const report = buildReport({
+        id: newReportId(), category, note: note.value, email: mail, version: VERSION, device: Log.deviceInfo(),
+        profile: S.profile, memory, log: Log.snapshot(),
+      });
+      Log.d('FEEDBACK', `إرسال ملاحظة ${report.id} (${category})`);
+      const arrived = await Feedback.send(report);
+      box.replaceChildren(h('div', { style: 'font-size:40px' }, arrived ? '💌' : '📦'),
+        h('h2', {}, arrived ? 'وصلت ملاحظتك، شكرًا لك' : 'حُفظت ملاحظتك'),
+        h('p', { class: 'muted' }, arrived ? 'سنراجعها ونحسّن صديقك الذكي.' : 'ستُرسل تلقائيًا عند توفر الإنترنت.'),
+        h('p', { class: 'small' }, `رقم الملاحظة: ${report.id}`),
+        h('button', { class: 'btn mid', onclick: close }, 'تم'));
+    }
+    box.append(h('div', { style: 'font-size:36px' }, '📝'), h('h2', {}, 'إرسال ملاحظة'),
+      h('p', { class: 'muted', style: 'font-size:14px' }, 'اختر نوع الملاحظة واكتبها بكلماتك. يُرفق معها تلقائيًا ما يساعدنا على فهمها، دون رمز Gemini ودون الصور.'),
+      chips, note, h('label', { class: 'small', style: 'align-self:flex-start' }, 'البريد الإلكتروني (اختياري) — إن أردت أن نرد عليك'), email, btn,
+      h('button', { class: 'link', onclick: close }, 'إلغاء'));
   });
 }
 
@@ -711,6 +730,7 @@ Log.header();
 Log.d('APP', `نسخة الويب ${VERSION}`);
 render();
 route();
+Feedback.flushQueue();
 
 // تحديث النسخة: عامل الخدمة يتحقق من نسخة جديدة عند كل فتح
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

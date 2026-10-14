@@ -10,7 +10,7 @@ const FILES = [
   'js/services/debugLog.js', 'js/services/store.js', 'js/services/gemini.js',
   'js/live/audioEngine.js', 'js/live/capture-worklet.js', 'js/live/liveSession.js', 'js/live/liveTutor.js',
   'js/core/prompt.js', 'js/core/liveConfig.js', 'js/core/livePolicy.js', 'js/core/calculator.js', 'js/core/liveTools.js',
-  'js/core/memory.js', 'js/core/pageResult.js', 'js/core/messages.js', 'js/core/speechGate.js', 'js/core/nearGate.js', 'js/core/pageReading.js',
+  'js/core/memory.js', 'js/core/report.js', 'js/services/feedback.js', 'js/core/pageResult.js', 'js/core/messages.js', 'js/core/speechGate.js', 'js/core/nearGate.js', 'js/core/pageReading.js',
 ];
 
 self.addEventListener('install', (e) => {
